@@ -24,21 +24,58 @@ function sup(n) {
   return String(n).split('').map(c => map[c] || c).join('');
 }
 
-/* data parsing (textarea / CSV) */
-function parseData(text) {
-  const rows = text.trim().split(/\r?\n+/);
-  const shearRates = [], viscosities = [];
-  for (const row of rows) {
-    const r = row.trim();
-    if (!r) continue;
-    const parts = r.split(/[,\t; ]+/).filter(Boolean);
-    if (parts.length < 2) continue;
-    const g = Number(parts[0]), e = Number(parts[1]);
-    if (!Number.isFinite(g) || !Number.isFinite(e)) continue;
-    shearRates.push(g);
-    viscosities.push(e);
+/* ────────────────────────────────────────────────────────────────
+   nanovisQ referral link — shown when the force estimate is too
+   uncertain to be useful. Swap in the exact product page if desired.
+   ──────────────────────────────────────────────────────────────── */
+const NANOVIS_URL = 'https://qatchtech.com/';
+
+/* If the predicted plunger-force band spans more than this fraction of
+   its central value, the estimate is flagged as too uncertain to use. */
+const FORCE_UNCERTAINTY_LIMIT = 0.30;   // 30%
+
+/* Needle gauge → nominal INNER diameter (mm), regular-wall hypodermic.
+   Values are diameters; the math halves them to get the lumen radius.
+   27 G (0.21 mm ID → 0.105 mm radius) matches the prior default. */
+const NEEDLE_ID_MM = {
+  18: 0.838, 19: 0.686, 20: 0.603, 21: 0.514, 22: 0.413, 23: 0.337,
+  24: 0.311, 25: 0.260, 26: 0.260, 27: 0.210, 28: 0.184, 29: 0.184,
+  30: 0.159, 31: 0.133, 32: 0.108, 33: 0.108, 34: 0.0826
+};
+
+/* Resolve the needle field to an inner diameter in mm. Reads the gauge
+   dropdown; when "Custom…" is selected it reads the custom box, which
+   accepts either a gauge number (7-34) or a raw inner diameter in mm. */
+function needleDiamMM() {
+  const sel = $('needleGauge');
+  let raw = sel ? String(sel.value || '').trim() : '';
+  if (raw === 'custom') {
+    raw = String($('needleCustom').value || '').trim();
+    if (!raw) throw new Error('Enter a custom gauge or inner diameter in mm.');
   }
-  return { shearRates, viscosities };
+  if (!raw) throw new Error('Select a needle gauge.');
+  const m = raw.match(/[\d.]+/);
+  if (!m) throw new Error('Could not read the needle gauge.');
+  const num = parseFloat(m[0]);
+  if (!Number.isFinite(num)) throw new Error('Could not read the needle gauge.');
+
+  // Integer in the gauge range → treat as a gauge and look up its ID.
+  if (num >= 7 && num <= 34 && Math.abs(num - Math.round(num)) < 1e-9) {
+    const g = Math.round(num);
+    if (NEEDLE_ID_MM[g] != null) return NEEDLE_ID_MM[g];
+    throw new Error('No inner-diameter on file for ' + g + ' G — enter the inner diameter in mm instead.');
+  }
+  // Otherwise interpret a small positive value as a custom inner diameter (mm).
+  if (num > 0 && num < 5) return num;
+  throw new Error('Enter a needle gauge (e.g. 27) or an inner diameter in mm.');
+}
+
+/* Show/hide the custom needle box when the dropdown changes. */
+function onGaugeChange() {
+  const isCustom = $('needleGauge').value === 'custom';
+  $('needleCustomWrap').style.display = isCustom ? '' : 'none';
+  if (isCustom) { const c = $('needleCustom'); if (c) c.focus(); }
+  computeDerived();
 }
 
 /* viscosity measurement grid (discrete boxes) */
@@ -83,7 +120,7 @@ function setViscRows(pairs) {
   pairs.forEach(([g, e]) => host.appendChild(makeViscRow(g, e)));
 }
 
-/* Read the grid into the same shape parseData returns. */
+/* Read the grid into the {shearRates, viscosities} shape the fitter expects. */
 function getViscData() {
   const shearRates = [], viscosities = [];
   document.querySelectorAll('#viscRows .vg-row').forEach(row => {
@@ -97,22 +134,6 @@ function getViscData() {
     }
   });
   return { shearRates, viscosities };
-}
-
-function loadCSV(input) {
-  const file = input.files && input.files[0];
-  if (!file) return;
-  $('csvName').textContent = file.name;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const { shearRates, viscosities } = parseData(String(e.target.result));
-    if (!shearRates.length) {
-      $('csvName').textContent = file.name + ' - no valid rows found';
-      return;
-    }
-    setViscRows(shearRates.map((g, i) => [g, viscosities[i]]));
-  };
-  reader.readAsText(file);
 }
 
 /* viscosity-mode toggle (Newtonian | Custom fit) */
@@ -139,11 +160,11 @@ function setInjMode(m) {
 
 /* ── geometry + injection kinematics */
 function getSyringe() {
-  const Rb = fv('barrelR') / 1000;       // mm -> m
-  const Rn = fv('needleR') / 1000;       // mm -> m
-  const L = fv('needleL') / 1000;        // mm -> m
-  const V = fv('injVol') * 1e-6;         // mL -> m^3
-  const Abarrel = Math.PI * Rb * Rb;     // m^3
+  const Rb = fv('barrelR') / 1000;            // mm -> m
+  const Rn = (needleDiamMM() / 2) / 1000;     // gauge inner Ø (mm) -> radius (m)
+  const L = fv('needleL') / 1000;             // mm -> m
+  const V = fv('injVol') * 1e-6;              // mL -> m^3
+  const Abarrel = Math.PI * Rb * Rb;          // m^2
 
   if (Rb <= 0) throw new Error('Barrel inner radius must be > 0.');
   if (Rn <= 0) throw new Error('Needle inner radius must be > 0.');
@@ -188,7 +209,7 @@ function computeDerived() {
 function fitViscosity() {
   clearErr('viscError');
   try {
-    const a = fv('yasudaA') || 2.0;
+    const a = 2.0;   // Yasuda transition width (fixed)
     let result;
 
     if (viscMode === 'newt') {
@@ -207,12 +228,12 @@ function fitViscosity() {
       };
     } else {
       const { shearRates, viscosities } = getViscData();
-      if (shearRates.length < 4) throw new Error('Custom fit needs at least 4 (shear rate, viscosity) rows.');
+      if (shearRates.length < 2) throw new Error('Custom fit needs at least 2 (shear rate, viscosity) rows. With 2-3 points the data is duplicated for a rough, low-confidence fit.');
       result = window.fitCarreauYasudaEnsemble(shearRates, viscosities, {
         a,
-        n_random_candidates: Math.round(fv('nRandom') || 3000),
-        n_starts: Math.round(fv('nStarts') || 40),
-        point_tolerance: fv('pointTol') || 0.25,
+        n_random_candidates: 3000,
+        n_starts: 40,
+        point_tolerance: 0.25,
         max_accepted: 200,
         random_seed: 1
       });
@@ -243,7 +264,7 @@ function renderRheology(r) {
       <div class="metric-card highlight">
         <div class="metric-label">Viscosity η</div>
         <div class="metric-value">${fmt(f.eta0, 2)} <small>cP</small></div>
-        <div class="metric-delta neutral">constant (Newtonian)</div>
+        <div class="metric-delta neutral">Newtonian)</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Power-law n</div>
@@ -253,12 +274,12 @@ function renderRheology(r) {
   } else {
     metrics = `
       <div class="metric-card highlight">
-        <div class="metric-label">η₀ (zero-shear)</div>
+        <div class="metric-label">η<sub>0</sub> (zero-shear)</div>
         <div class="metric-value">${fmt(f.eta0, 2)} <small>cP</small></div>
         <div class="metric-delta neutral">low-shear plateau</div>
       </div>
       <div class="metric-card">
-        <div class="metric-label">η∞ (high-shear)</div>
+        <div class="metric-label">η<sub>∞</sub> (high-shear)</div>
         <div class="metric-value">${fmt(f.etainf, 2)} <small>cP</small></div>
         <div class="metric-delta neutral">limiting plateau</div>
       </div>
@@ -268,7 +289,7 @@ function renderRheology(r) {
         <div class="metric-delta ${f.n < 1 ? 'down' : 'neutral'}">${f.n < 1 ? 'shear-thinning' : 'Newtonian'}</div>
       </div>
       <div class="metric-card">
-        <div class="metric-label">γc (critical)</div>
+        <div class="metric-label">γ<sub>c</sub> (critical)</div>
         <div class="metric-value">${fmtSci(f.gamma_c)} <small>s⁻¹</small></div>
         <div class="metric-delta neutral">transition</div>
       </div>`;
@@ -292,18 +313,21 @@ function renderRheology(r) {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M20 8c-3 0-3 6-6 6s-3-4-6-4-3 4-5 4"/></svg>
       </span>
       <span class="bh-title">Viscosity Profile</span>
-      <span class="bh-badge ${isNewt ? 'badge-newt' : 'badge-cy'}">${isNewt ? 'Newtonian' : 'Carreau–Yasuda'}</span>
-      <span class="bh-badge ${confCls}">${d.confidence}</span>
+      <span class="bh-badge ${isNewt ? 'badge-newt' : 'badge-cy'}">${isNewt ? 'Newtonian' : 'Carreau-Yasuda'}</span>
     </div>
     <div class="metric-grid ${isNewt ? '' : 'four'}">${metrics}</div>
     ${fitCount}
     <div class="chart-card">
+      <div class="chart-quality">
+        <span class="cq-label">Fit Quality</span>
+        <span class="bh-badge ${confCls}">${d.confidence}</span>
+      </div>
       <div class="chart-wrap"><canvas id="fitChart"></canvas></div>
       <div class="chart-legend">
-        <div class="legend-item" style="display:flex;align-items:center;gap:6px"><span class="legend-swatch" style="background:rgba(23,169,212,0.22)"></span>90% ensemble band (5–95%)</div>
+        <div class="legend-item" style="display:flex;align-items:center;gap:6px"><span class="legend-swatch" style="background:rgba(23,169,212,0.22)"></span>90% ensemble band (5-95%)</div>
         <div class="legend-item" style="display:flex;align-items:center;gap:6px"><span class="legend-line" style="border-color:#0d8ab3"></span>Median fit</div>
         ${isNewt ? '' : '<div class="legend-item" style="display:flex;align-items:center;gap:6px"><span class="legend-dot2" style="background:#1a2a3a"></span>Measured data</div>'}
-        <div class="legend-item" id="needleLegend" style="display:none;align-items:center;gap:6px"><span class="legend-line" style="border-color:#e8962a;border-top-style:dashed"></span>Needle shear γ_eff</div>
+        <div class="legend-item" id="needleLegend" style="display:none;align-items:center;gap:6px"><span class="legend-line" style="border-color:#e8962a;border-top-style:dashed"></span>Needle shear γ<sub>eff</sub></div>
       </div>
     </div>
     ${warnHtml}`;
@@ -330,7 +354,7 @@ function calcForce() {
     // Viscosity (+ 5/50/95 ensemble band) at that shear rate, in cP
     const v = window.viscosityAtShear(lastFit, gammaEff, a);
 
-    // Hagen–Poiseuille hydrodynamic force (η in Pa·s -> N); π cancels
+    // Hagen-Poiseuille hydrodynamic force (η in Pa·s -> N); π cancels
     const Fh = etaCP => 8 * (etaCP * 1e-3) * s.L * s.Q * s.Rb * s.Rb / Math.pow(s.Rn, 4);
     const totalOf = etaCP => phi * Fh(etaCP) + fric;
 
@@ -354,10 +378,24 @@ function calcForce() {
 }
 
 function renderForce(o) {
+  // Relative width of the plunger-force confidence band. If it exceeds the
+  // limit, the estimate is too uncertain to act on and we steer to nanovisQ.
+  const forceRange = (o.isNewt || !(o.Fmed > 0)) ? 0 : (o.Fhigh - o.Flow) / o.Fmed;
+  const tooUncertain = forceRange > FORCE_UNCERTAINTY_LIMIT;
+  const uncertainHtml = tooUncertain ? `
+    <div class="uncertainty-warn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <div class="uw-body">
+        <div class="uw-title">Measurement uncertainty is too large</div>
+        <div class="uw-text">The predicted plunger force spans <b>${Math.round(forceRange * 100)}%</b> of its central value (<b>${fmt(o.Flow, 1)}-${fmt(o.Fhigh, 1)} N</b>), which is too wide to be reliable for injectability decisions. This usually means the viscosity profile is under-constrained — too few points, a narrow shear range, or noisy data. A direct, high-shear viscosity measurement collapses this band.</div>
+        <a class="uw-link" href="${NANOVIS_URL}" target="_blank" rel="noopener noreferrer">Measure it directly with nanovisQ →</a>
+      </div>
+    </div>` : '';
+
   const ciVisc = o.isNewt ? '' :
-    `<div class="metric-ci">90% CI <b>${fmt(o.v.lower, 2)}</b> – <b>${fmt(o.v.upper, 2)}</b> cP</div>`;
+    `<div class="metric-ci">90% CI <b>${fmt(o.v.lower, 2)}</b> - <b>${fmt(o.v.upper, 2)}</b> cP</div>`;
   const ciForce = o.isNewt ? '' :
-    `<div class="metric-ci">90% CI <b>${fmt(o.Flow, 1)}</b> – <b>${fmt(o.Fhigh, 1)}</b> N</div>`;
+    `<div class="metric-ci">90% CI <b>${fmt(o.Flow, 1)}</b> - <b>${fmt(o.Fhigh, 1)}</b> N</div>`;
 
   const extrapNote = o.extrap
     ? `<div class="warn-item" style="margin-bottom:14px">
@@ -376,7 +414,7 @@ function renderForce(o) {
     ${extrapNote}
     <div class="metric-grid four">
       <div class="metric-card">
-        <div class="metric-label">Needle shear γ_eff</div>
+        <div class="metric-label">Needle shear γ<sub>eff</sub></div>
         <div class="metric-value">${fmtSci(o.gammaEff)} <small>s⁻¹</small></div>
         <div class="metric-delta neutral">effective, n = ${fmt(o.n, 2)}</div>
       </div>
@@ -388,7 +426,7 @@ function renderForce(o) {
       <div class="metric-card">
         <div class="metric-label">Hydrodynamic force</div>
         <div class="metric-value">${fmt(o.hydroMod, 1)} <small>N</small></div>
-        <div class="metric-delta neutral">φ · Hagen–Poiseuille</div>
+        <div class="metric-delta neutral">φ · Hagen-Poiseuille</div>
       </div>
       <div class="metric-card highlight">
         <div class="metric-label">Total plunger force</div>
@@ -397,6 +435,7 @@ function renderForce(o) {
       </div>
     </div>
 
+    ${uncertainHtml}
     ${buildGauge(o.Fmed, o.Flow, o.Fhigh, o.isNewt)}
 
     <div class="breakdown">
@@ -455,7 +494,7 @@ function buildGauge(Fmed, Flow, Fhigh, isNewt) {
     <div class="gauge-card">
       <div class="gauge-readout">
         <span class="g-value">${fmt(Fmed, 1)}</span><span class="g-unit">N</span>
-        ${isNewt ? '' : `<span class="g-range">${fmt(Flow, 1)} – ${fmt(Fhigh, 1)} N<span>90% confidence</span></span>`}
+        ${isNewt ? '' : `<span class="g-range">${fmt(Flow, 1)} - ${fmt(Fhigh, 1)} N<span>90% confidence</span></span>`}
       </div>
       <div class="gauge-track">
         ${zoneHtml}
@@ -465,8 +504,8 @@ function buildGauge(Fmed, Flow, Fhigh, isNewt) {
       <div class="gauge-scale"><span>0 N</span><span>${(scaleMax/2)} N</span><span>${scaleMax} N</span></div>
       <div class="gauge-labels">
         <span class="gauge-tag"><span class="gt-dot" style="background:rgba(23,169,212,0.55)"></span>Easy &lt;15 N</span>
-        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(102,187,106,0.55)"></span>Moderate 15–30</span>
-        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(232,150,42,0.6)"></span>Firm 30–45</span>
+        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(102,187,106,0.55)"></span>Moderate 15-30</span>
+        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(232,150,42,0.6)"></span>Firm 30-45</span>
         <span class="gauge-tag"><span class="gt-dot" style="background:rgba(217,79,79,0.62)"></span>Very high &gt;45</span>
       </div>
       <div class="gauge-verdict">
@@ -477,7 +516,7 @@ function buildGauge(Fmed, Flow, Fhigh, isNewt) {
     </div>`;
 }
 
-/* Chart.js render (log–log; CI band, median, measured, marker) */
+/* Chart.js render (log-log; CI band, median, measured, marker) */
 function drawChart(result, gammaEff) {
   const canvas = $('fitChart');
   if (!canvas) return;
@@ -504,7 +543,7 @@ function drawChart(result, gammaEff) {
     datasets.push({ label: 'Measured', data: measured, type: 'scatter', borderColor: '#1a2a3a', backgroundColor: '#1a2a3a', pointRadius: 4.5, pointHoverRadius: 6 });
   }
   if (gammaEff) {
-    datasets.push({ label: 'Needle γ_eff', data: [{ x: gammaEff, y: yMin }, { x: gammaEff, y: yMax }], borderColor: '#e8962a', borderWidth: 2, borderDash: [6, 4], pointRadius: 0, fill: false });
+    datasets.push({ label: 'Needle γ<sub>eff</sub>', data: [{ x: gammaEff, y: yMin }, { x: gammaEff, y: yMax }], borderColor: '#e8962a', borderWidth: 2, borderDash: [6, 4], pointRadius: 0, fill: false });
     const nl = $('needleLegend'); if (nl) nl.style.display = 'flex';
   }
 
@@ -552,12 +591,6 @@ function toggleAccordion(btn) {
   body.classList.toggle('open', !open);
   btn.classList.toggle('active', !open);
 }
-function toggleAdvanced(btn) {
-  const body = btn.nextElementSibling;
-  const open = body.classList.contains('open');
-  body.classList.toggle('open', !open);
-  btn.classList.toggle('open', !open);
-}
 function toggleInfo(id) { $(id).classList.toggle('open'); }
 
 function submitContact(e) {
@@ -576,7 +609,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setViscRows(DEFAULT_VISC_ROWS);
   setViscMode('custom');
   setInjMode('time');
-  ['barrelR', 'needleR', 'injVol', 'injTime', 'flowQ', 'plungerV'].forEach(id => {
+  ['barrelR', 'needleCustom', 'injVol', 'injTime', 'flowQ', 'plungerV'].forEach(id => {
     const el = $(id); if (el) el.addEventListener('input', computeDerived);
   });
   computeDerived();

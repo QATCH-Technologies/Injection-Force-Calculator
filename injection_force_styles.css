@@ -648,7 +648,7 @@ body::after {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.10em;
-  text-transform: uppercase;
+  text-transform: none;
   color: var(--text-muted);
   margin-bottom: 6px;
 }
@@ -1727,3 +1727,119 @@ blockquote a {
   transition: background var(--transition), color var(--transition), border-style var(--transition);
 }
 .vg-add:hover { background: var(--qatch-cyan); color: var(--text-on-cyan); border-style: solid; }
+/* ════════════════════════════════════════════════════════════════
+   FIT QUALITY MARKER  (sits at the top of the chart card)
+   ════════════════════════════════════════════════════════════════ */
+.chart-quality {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.chart-quality .cq-label {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.chart-quality .bh-badge {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 3px 10px; border-radius: var(--radius-pill);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   FORCE-UNCERTAINTY CALLOUT  (band wider than the allowed limit)
+   ════════════════════════════════════════════════════════════════ */
+.uncertainty-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 4px 0 16px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: rgba(217, 79, 79, 0.07);
+  border: 1px solid rgba(217, 79, 79, 0.28);
+}
+.uncertainty-warn > svg { flex-shrink: 0; color: var(--danger); margin-top: 1px; }
+.uncertainty-warn .uw-body { display: flex; flex-direction: column; gap: 5px; }
+.uncertainty-warn .uw-title {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 13px; font-weight: 700; color: var(--danger);
+  letter-spacing: 0.01em;
+}
+.uncertainty-warn .uw-text {
+  font-size: 12px; color: var(--text-secondary); line-height: 1.55;
+}
+.uncertainty-warn .uw-text b { color: var(--text-primary); font-weight: 600; }
+.uncertainty-warn .uw-link {
+  align-self: flex-start;
+  margin-top: 4px;
+  display: inline-flex; align-items: center;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  background: var(--qatch-cyan);
+  color: var(--text-on-cyan);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
+  text-decoration: none;
+  transition: background var(--transition), transform var(--transition);
+}
+.uncertainty-warn .uw-link:hover { background: var(--qatch-cyan-dark); transform: translateY(-1px); }
+
+/* ════════════════════════════════════════════════════════════════
+   ALTERNATE "TRI-COLUMN" LAYOUT
+   Activated by adding class="page-wrap layout-tricol".
+   Two skinny input panels side-by-side + a wide results panel at right.
+   All rules are scoped to .layout-tricol so the default page is unaffected.
+   ════════════════════════════════════════════════════════════════ */
+.layout-tricol .app-body {
+  grid-template-columns: minmax(270px, 320px) minmax(270px, 320px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+/* #inputColumn stops being a box so its two tiles become direct grid
+   items (columns 1 & 2); #resultsPanel takes column 3. */
+.layout-tricol #inputColumn { display: contents; }
+
+/* Each input tile now fills its column height and scrolls on its own. */
+.layout-tricol .input-tile {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.layout-tricol .input-tile > .card-header { flex-shrink: 0; }
+.layout-tricol .input-tile > .card-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+.layout-tricol .input-tile > .card-body::-webkit-scrollbar { width: 5px; }
+.layout-tricol .input-tile > .card-body::-webkit-scrollbar-track { background: transparent; }
+.layout-tricol .input-tile > .card-body::-webkit-scrollbar-thumb { background: rgba(23,169,212,0.28); border-radius: 3px; }
+.layout-tricol .input-tile > .card-body::-webkit-scrollbar-thumb:hover { background: rgba(23,169,212,0.45); }
+
+/* Skinny columns: relax the 3-up button toggle so labels don't clip. */
+.layout-tricol .mode-toggle.three .mode-btn { padding: 9px 6px; font-size: 11px; }
+.layout-tricol .derived-grid { grid-template-columns: 1fr; }
+
+/* Collapse to a single stacked column at the same breakpoint as the
+   default layout, so the global portrait rules (which free html/body/
+   page-wrap scrolling) line up with this override. */
+@media (max-width: 939px) {
+  .layout-tricol .app-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    overflow: visible;
+    height: auto;
+    flex: none;
+  }
+  .layout-tricol .input-tile { overflow: visible; }
+  .layout-tricol .input-tile > .card-body { overflow: visible; height: auto; }
+  .layout-tricol .derived-grid { grid-template-columns: repeat(3, 1fr); }
+}

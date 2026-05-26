@@ -158,7 +158,7 @@ function robustNewtonianPrecheck(gamma, eta, a, opts = {}) {
 
 function rmseLogForParams(gamma, eta, params, a) {
   const [eta0, etainf, n, gammaC] = params;
-  if (!(eta0 > etainf) || n <= 0 || n > 1 || gammaC <= 0) return Infinity;
+  if (!(eta0 > etainf) || n < 0.2 || n > 1 || gammaC <= 0) return Infinity;
 
   let sum = 0;
   for (let i = 0; i < gamma.length; i++) {
@@ -172,7 +172,7 @@ function rmseLogForParams(gamma, eta, params, a) {
 
 function makeFit(params, gamma, eta, a) {
   const [eta0, etainf, n, gammaC] = params;
-  if (!(eta0 > etainf) || n <= 0 || n > 1 || gammaC <= 0) return null;
+  if (!(eta0 > etainf) || n < 0.2 || n > 1 || gammaC <= 0) return null;
 
   const preds = gamma.map(g => carreauYasuda(g, eta0, etainf, n, gammaC, a));
   if (preds.some(p => !isFinite(p) || p <= 0)) return null;
@@ -332,10 +332,25 @@ function fitCarreauYasudaEnsemble(shearRates, viscosities, options = {}) {
   const randomSeed = options.random_seed ?? 1;
   const eta0EtainfRelativeThreshold = options.eta0_etainf_relative_threshold ?? 0.08;
 
-  if (shearRates.length < 4) throw new Error("At least 4 shear-rate measurements are required.");
+  if (shearRates.length < 2) throw new Error("At least 2 shear-rate measurements are required.");
   if (shearRates.length !== viscosities.length) throw new Error("Shear rates and viscosities must have the same length.");
   if (shearRates.some(x => x <= 0) || viscosities.some(x => x <= 0)) {
     throw new Error("All shear rates and viscosities must be positive.");
+  }
+
+  // Rough-fit padding: the solver needs >= 4 points, so if the user supplies
+  // only 2 or 3 we cycle through their points to fill out to 4. The fit is
+  // then under-constrained on purpose and will report low confidence.
+  if (shearRates.length < 4) {
+    const n0 = shearRates.length;
+    const padG = shearRates.slice();
+    const padE = viscosities.slice();
+    for (let i = 0; padG.length < 4; i++) {
+      padG.push(shearRates[i % n0]);
+      padE.push(viscosities[i % n0]);
+    }
+    shearRates = padG;
+    viscosities = padE;
   }
 
   const pairs = shearRates.map((g, i) => [Number(g), Number(viscosities[i])]).sort((a, b) => a[0] - b[0]);
@@ -352,7 +367,7 @@ function fitCarreauYasudaEnsemble(shearRates, viscosities, options = {}) {
   const lower = {
     eta0: etaMax * 0.8,
     etainf: etaMin * 0.001,
-    n: 0.05,
+    n: 0.2,
     gamma_c: 1.0
   };
 
@@ -409,13 +424,19 @@ function fitCarreauYasudaEnsemble(shearRates, viscosities, options = {}) {
   allFits.sort((a, b) => a.rmse_log - b.rmse_log);
   const best = allFits[0];
 
+  // Only collapse to a Newtonian label when the data actually justifies it:
+  // the run must span >= 3 decades of shear AND reach high shear (>= 1e5 s^-1).
+  // Without that coverage we keep the Carreau-Yasuda fit rather than ASSUME Newtonian.
+  const newtShearSpan = log10(max(gamma)) - log10(min(gamma));
+  const newtReachesHighShear = max(gamma) >= 1e5;
+  const newtBroad = newtShearSpan >= 3.0;
   const etaGap = Math.abs(best.eta0 - best.etainf) / Math.max(best.eta0, best.etainf);
-  if (etaGap <= eta0EtainfRelativeThreshold) {
+  if (etaGap <= eta0EtainfRelativeThreshold && newtBroad && newtReachesHighShear) {
     return newtonianResult(
       gamma,
       eta,
       a,
-      "Newtonian behavior detected: fitted eta0 and etainf are practically indistinguishable, so n and &gamma;<sub>c</sub> are not meaningful."
+      "Newtonian behavior detected: fitted eta0 and etainf are practically indistinguishable across at least 3 decades of shear with coverage above 1e5 s⁻¹, so n and &gamma;<sub>c</sub> are not meaningful."
     );
   }
 
