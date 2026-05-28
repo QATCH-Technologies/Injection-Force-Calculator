@@ -1651,8 +1651,6 @@ blockquote a {
 }
 .vg-head span:last-child { text-align: center; }
 .vg-rows {
-  max-height: 190px;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1661,10 +1659,6 @@ blockquote a {
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.45);
 }
-.vg-rows::-webkit-scrollbar { width: 8px; }
-.vg-rows::-webkit-scrollbar-track { background: transparent; }
-.vg-rows::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 4px; }
-.vg-rows::-webkit-scrollbar-thumb:hover { background: var(--qatch-cyan); }
 .vg-row {
   display: grid;
   grid-template-columns: 1fr 1fr 32px;
@@ -1842,4 +1836,76 @@ blockquote a {
   .layout-tricol .input-tile { overflow: visible; }
   .layout-tricol .input-tile > .card-body { overflow: visible; height: auto; }
   .layout-tricol .derived-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SYRINGE TILE DENSITY OVERRIDES (tri-col layout only)
+   Goal: make the syringe & injection card fit without scrolling.
+   ════════════════════════════════════════════════════════════════ */
+.layout-tricol .input-tile .card-body {
+  padding: 10px 14px;
+}
+.layout-tricol .input-tile .field {
+  margin-bottom: 9px;
+}
+.layout-tricol .input-tile .field input[type="number"],
+.layout-tricol .input-tile .field select {
+  padding: 7px 10px;
+  font-size: 13px;
+}
+.layout-tricol .input-tile .section-label {
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+}
+.layout-tricol .input-tile .divider {
+  margin: 10px 0;
+}
+.layout-tricol .input-tile .mode-toggle {
+  margin-bottom: 10px;
+}
+.layout-tricol .input-tile .mode-btn {
+  padding: 7px 8px;
+}
+.layout-tricol .input-tile .derived-grid {
+  grid-template-columns: repeat(3, 1fr);   /* horizontal again — saves vertical space */
+  gap: 5px;
+  margin-bottom: 0;
+}
+.layout-tricol .input-tile .derived-chip {
+  padding: 5px 8px;
+}
+.layout-tricol .input-tile .derived-chip .d-label {
+  font-size: 9px;
+}
+.layout-tricol .input-tile .derived-chip .d-val {
+  font-size: 12px;
+}
+.layout-tricol .input-tile .data-hint {
+  font-size: 10.5px;
+  margin-top: 4px;
+}
+/* Needle-type mini-toggle: compact, no bottom gap */
+.needle-type-toggle {
+  margin-bottom: 6px !important;
+}
+.needle-type-toggle .mode-btn {
+  padding: 5px 8px !important;
+  font-size: 11px !important;
+}
+
+/* Inline field hint (e.g. valid range below needle input) */
+.field-hint {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-family: 'Roboto', sans-serif;
+  letter-spacing: 0.02em;
+}
+
+/* Red border state for out-of-range inputs */
+.field input.field-invalid {
+  border-color: var(--danger) !important;
+  background: rgba(217, 79, 79, 0.04) !important;
+  box-shadow: 0 0 0 3px rgba(217, 79, 79, 0.10) !important;
 }

@@ -29,10 +29,11 @@ function sup(n) {
    uncertain to be useful. Swap in the exact product page if desired.
    ──────────────────────────────────────────────────────────────── */
 const NANOVIS_URL = 'https://qatchtech.com/';
+const NANOVIS_BLOG_URL = 'https://qatchtech.com/blog/f/why-shear-rate-range-matters-for-injectability-prediction';
 
 /* If the predicted plunger-force band spans more than this fraction of
    its central value, the estimate is flagged as too uncertain to use. */
-const FORCE_UNCERTAINTY_LIMIT = 0.30;   // 30%
+const FORCE_UNCERTAINTY_LIMIT = 0.50;   // 50%
 
 /* Needle gauge → nominal INNER diameter (mm), regular-wall hypodermic.
    Values are diameters; the math halves them to get the lumen radius.
@@ -48,41 +49,46 @@ const NEEDLE_ID_MM = {
    accepts either a gauge number (7-34) or a raw inner diameter in mm. */
 function needleDiamMM() {
   const sel = $('needleGauge');
-  let raw = sel ? String(sel.value || '').trim() : '';
-  if (raw === 'custom') {
-    raw = String($('needleCustom').value || '').trim();
-    if (!raw) throw new Error('Enter a custom gauge or inner diameter in mm.');
+  const selVal = sel ? String(sel.value || '').trim() : '';
+  if (!selVal) throw new Error('Select a needle gauge.');
+
+  if (selVal === 'custom') {
+    const customVal = String($('needleCustom').value || '').trim();
+    if (!customVal) throw new Error(
+      needleCustomMode === 'gauge'
+        ? 'Enter a gauge number (e.g. 25).'
+        : 'Enter an inner diameter in mm (e.g. 0.210).'
+    );
+    const num = parseFloat(customVal);
+    if (!Number.isFinite(num) || num <= 0) throw new Error('Enter a valid positive number.');
+    if (needleCustomMode === 'gauge') {
+      const g = Math.round(num);
+      if (NEEDLE_ID_MM[g] != null) return NEEDLE_ID_MM[g];
+      throw new Error('Enter a gauge between 18 and 34.');
+    } else {
+      if (num >= 5) throw new Error('Inner diameter seems too large — enter in mm (e.g. 0.210 for 27 G).');
+      return num;
+    }
   }
-  if (!raw) throw new Error('Select a needle gauge.');
-  const m = raw.match(/[\d.]+/);
-  if (!m) throw new Error('Could not read the needle gauge.');
-  const num = parseFloat(m[0]);
+
+  // Standard dropdown gauge
+  const num = parseFloat(selVal);
   if (!Number.isFinite(num)) throw new Error('Could not read the needle gauge.');
-
-  // Integer in the gauge range → treat as a gauge and look up its ID.
-  if (num >= 7 && num <= 34 && Math.abs(num - Math.round(num)) < 1e-9) {
-    const g = Math.round(num);
-    if (NEEDLE_ID_MM[g] != null) return NEEDLE_ID_MM[g];
-    throw new Error('No inner-diameter on file for ' + g + ' G — enter the inner diameter in mm instead.');
-  }
-  // Otherwise interpret a small positive value as a custom inner diameter (mm).
-  if (num > 0 && num < 5) return num;
-  throw new Error('Enter a needle gauge (e.g. 27) or an inner diameter in mm.');
+  const g = Math.round(num);
+  if (NEEDLE_ID_MM[g] != null) return NEEDLE_ID_MM[g];
+  throw new Error('No inner-diameter on file for ' + g + ' G.');
 }
-
 /* Show/hide the custom needle box when the dropdown changes. */
 function onGaugeChange() {
   const isCustom = $('needleGauge').value === 'custom';
   $('needleCustomWrap').style.display = isCustom ? '' : 'none';
-  if (isCustom) { const c = $('needleCustom'); if (c) c.focus(); }
+  if (isCustom) {
+    needleCustomMode = 'gauge';
+    setNeedleCustomMode('gauge');
+    const c = $('needleCustom'); if (c) c.focus();
+  }
   computeDerived();
 }
-
-/* viscosity measurement grid (discrete boxes) */
-const DEFAULT_VISC_ROWS = [
-  [100, 46], [1000, 45], [10000, 43], [100000, 37],
-  [15000000, 29]
-];
 
 function makeViscRow(shear = '', visc = '') {
   const row = document.createElement('div');
@@ -138,6 +144,51 @@ function getViscData() {
 
 /* viscosity-mode toggle (Newtonian | Custom fit) */
 let viscMode = 'custom';
+
+/* custom needle input mode ('gauge' | 'id') */
+let needleCustomMode = 'gauge';
+function setNeedleCustomMode(m) {
+  needleCustomMode = m;
+  $('ncmGauge').classList.toggle('active', m === 'gauge');
+  $('ncmId').classList.toggle('active', m === 'id');
+  const inp  = $('needleCustom');
+  const hint = $('needleCustomHint');
+  if (inp) {
+    if (m === 'gauge') {
+      inp.placeholder = 'e.g. 25';
+      inp.min  = '18';
+      inp.max  = '34';
+      inp.step = '1';
+      if (hint) hint.textContent = 'Valid range: 18–34 G';
+    } else {
+      inp.placeholder = 'e.g. 0.210';
+      inp.min  = '0.01';
+      inp.max  = '4.99';
+      inp.step = 'any';
+      if (hint) hint.textContent = 'Inner diameter in mm (0.01 – 4.99)';
+    }
+    inp.value = '';
+    inp.classList.remove('field-invalid');
+  }
+  computeDerived();
+}
+
+function validateNeedleCustom() {
+  const inp = $('needleCustom');
+  if (!inp) return;
+  const val = inp.value.trim();
+  if (!val) { inp.classList.remove('field-invalid'); return; }
+  const num = parseFloat(val);
+  let valid;
+  if (needleCustomMode === 'gauge') {
+    const g = Math.round(num);
+    valid = Number.isFinite(num) && g >= 18 && g <= 34 && NEEDLE_ID_MM[g] != null;
+  } else {
+    valid = Number.isFinite(num) && num > 0 && num < 5;
+  }
+  inp.classList.toggle('field-invalid', !valid);
+}
+
 function setViscMode(m) {
   viscMode = m;
   $('vmNewt').classList.toggle('active', m === 'newt');
@@ -248,7 +299,10 @@ function fitViscosity() {
     $('rheologyBlock').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     return result;
   } catch (e) {
-    showErr('viscError', e.message);
+    const msg = e.message && e.message.startsWith('No valid fits found')
+      ? 'Nofit is available for this data. Try adding more measurements or a wider shear-rate range.'
+      : e.message;
+    showErr('viscError', msg);
     return null;
   }
 }
@@ -267,29 +321,29 @@ function renderRheology(r) {
         <div class="metric-delta neutral">Newtonian)</div>
       </div>
       <div class="metric-card">
-        <div class="metric-label">Power-law n</div>
+        <div class="metric-label">POWER-LAW n</div>
         <div class="metric-value">1.00</div>
         <div class="metric-delta neutral">no shear-thinning</div>
       </div>`;
   } else {
     metrics = `
       <div class="metric-card highlight">
-        <div class="metric-label">η<sub>0</sub> (zero-shear)</div>
+        <div class="metric-label">η<sub>0</sub> (ZERO-SHEAR)</div>
         <div class="metric-value">${fmt(f.eta0, 2)} <small>cP</small></div>
         <div class="metric-delta neutral">low-shear plateau</div>
       </div>
       <div class="metric-card">
-        <div class="metric-label">η<sub>∞</sub> (high-shear)</div>
+        <div class="metric-label">η<sub>∞</sub> (HIGH-SHEAR)</div>
         <div class="metric-value">${fmt(f.etainf, 2)} <small>cP</small></div>
         <div class="metric-delta neutral">limiting plateau</div>
       </div>
       <div class="metric-card">
-        <div class="metric-label">Power-law n</div>
+        <div class="metric-label">POWER-LAW n</div>
         <div class="metric-value">${fmt(f.n, 3)}</div>
         <div class="metric-delta ${f.n < 1 ? 'down' : 'neutral'}">${f.n < 1 ? 'shear-thinning' : 'Newtonian'}</div>
       </div>
       <div class="metric-card">
-        <div class="metric-label">γ<sub>c</sub> (critical)</div>
+        <div class="metric-label">γ<sub>c</sub> (CRITICAL)</div>
         <div class="metric-value">${fmtSci(f.gamma_c)} <small>s⁻¹</small></div>
         <div class="metric-delta neutral">transition</div>
       </div>`;
@@ -327,7 +381,7 @@ function renderRheology(r) {
         <div class="legend-item" style="display:flex;align-items:center;gap:6px"><span class="legend-swatch" style="background:rgba(23,169,212,0.22)"></span>90% ensemble band (5-95%)</div>
         <div class="legend-item" style="display:flex;align-items:center;gap:6px"><span class="legend-line" style="border-color:#0d8ab3"></span>Median fit</div>
         ${isNewt ? '' : '<div class="legend-item" style="display:flex;align-items:center;gap:6px"><span class="legend-dot2" style="background:#1a2a3a"></span>Measured data</div>'}
-        <div class="legend-item" id="needleLegend" style="display:none;align-items:center;gap:6px"><span class="legend-line" style="border-color:#e8962a;border-top-style:dashed"></span>Needle shear γ<sub>eff</sub></div>
+        <div class="legend-item" id="needleLegend" style="display:none;align-items:center;gap:6px"><span class="legend-line" style="border-color:#e8962a;border-top-style:dashed"></span>NEEDLE SHEAR γ<sub>eff</sub></div>
       </div>
     </div>
     ${warnHtml}`;
@@ -381,14 +435,15 @@ function renderForce(o) {
   // Relative width of the plunger-force confidence band. If it exceeds the
   // limit, the estimate is too uncertain to act on and we steer to nanovisQ.
   const forceRange = (o.isNewt || !(o.Fmed > 0)) ? 0 : (o.Fhigh - o.Flow) / o.Fmed;
-  const tooUncertain = forceRange > FORCE_UNCERTAINTY_LIMIT;
+  const cyFitWeak = !o.isNewt && lastFit?.diagnostics?.confidence === 'Weak';
+  const tooUncertain = (forceRange > FORCE_UNCERTAINTY_LIMIT) || cyFitWeak;
   const uncertainHtml = tooUncertain ? `
     <div class="uncertainty-warn">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       <div class="uw-body">
         <div class="uw-title">Measurement uncertainty is too large</div>
-        <div class="uw-text">The predicted plunger force spans <b>${Math.round(forceRange * 100)}%</b> of its central value (<b>${fmt(o.Flow, 1)}-${fmt(o.Fhigh, 1)} N</b>), which is too wide to be reliable for injectability decisions. This usually means the viscosity profile is under-constrained — too few points, a narrow shear range, or noisy data. A direct, high-shear viscosity measurement collapses this band.</div>
-        <a class="uw-link" href="${NANOVIS_URL}" target="_blank" rel="noopener noreferrer">Measure it directly with nanovisQ →</a>
+        <div class="uw-text">The viscosity profile is under-constrained, leading to a large injection force range. Expanding shear-rate coverage with direct measurements can substantially improve prediction confidence.</div>
+        <a class="uw-link" href="${NANOVIS_BLOG_URL}" target="_blank" rel="noopener noreferrer">Learn more about shear-rate coverage →</a>
       </div>
     </div>` : '';
 
@@ -419,17 +474,17 @@ function renderForce(o) {
         <div class="metric-delta neutral">effective, n = ${fmt(o.n, 2)}</div>
       </div>
       <div class="metric-card">
-        <div class="metric-label">η at needle shear</div>
+        <div class="metric-label">η AT NEEDLE SHEAR</div>
         <div class="metric-value">${fmt(o.v.median, 2)} <small>cP</small></div>
         ${ciVisc || '<div class="metric-delta neutral">from profile</div>'}
       </div>
       <div class="metric-card">
-        <div class="metric-label">Hydrodynamic force</div>
+        <div class="metric-label">HYDRODYNAMIC FORCE</div>
         <div class="metric-value">${fmt(o.hydroMod, 1)} <small>N</small></div>
         <div class="metric-delta neutral">φ · Hagen-Poiseuille</div>
       </div>
       <div class="metric-card highlight">
-        <div class="metric-label">Total plunger force</div>
+        <div class="metric-label">TOTAL PLUNGER FORCE</div>
         <div class="metric-value">${fmt(o.Fmed, 1)} <small>N</small></div>
         ${ciForce || '<div class="metric-delta neutral">hydro + friction</div>'}
       </div>
@@ -460,14 +515,13 @@ function renderForce(o) {
 
 /* force "scale": zoned gauge with CI span + pointer + verdict */
 function buildGauge(Fmed, Flow, Fhigh, isNewt) {
-  // heuristic comfort zones (N) for a manual prefilled-syringe push
   const zones = [
-    { to: 15, cls: 'z-easy', label: 'Easy', col: 'rgba(23,169,212,0.55)' },
-    { to: 30, cls: 'z-mod',  label: 'Moderate', col: 'rgba(102,187,106,0.55)' },
-    { to: 45, cls: 'z-firm', label: 'Firm', col: 'rgba(232,150,42,0.6)' },
+    { to: 10,       cls: 'z-easy', label: 'Low',       col: 'rgba(23,169,212,0.55)' },
+    { to: 20,       cls: 'z-mod',  label: 'Moderate',  col: 'rgba(102,187,106,0.55)' },
+    { to: 30,       cls: 'z-firm', label: 'High',      col: 'rgba(232,150,42,0.6)' },
     { to: Infinity, cls: 'z-high', label: 'Very high', col: 'rgba(217,79,79,0.62)' }
   ];
-  let scaleMax = Math.max(60, Math.ceil((Fhigh * 1.2) / 10) * 10);
+  let scaleMax = Math.max(40, Math.ceil((Fhigh * 1.2) / 10) * 10);
   const pct = x => Math.max(0, Math.min(100, (x / scaleMax) * 100));
   let prev = 0, zoneHtml = '';
   for (const z of zones) {
@@ -483,12 +537,11 @@ function buildGauge(Fmed, Flow, Fhigh, isNewt) {
   const ciSpan = isNewt ? '' :
     `<div class="gauge-ci" style="left:${ciLeft}%;width:${ciW}%"></div>`;
 
-  // verdict
   let verdict, vCol;
-  if (Fmed < 15) { verdict = 'comfortable for most adults to inject manually'; vCol = 'rgba(23,169,212,1)'; }
-  else if (Fmed < 30) { verdict = 'a moderate push - generally manageable for healthy adults'; vCol = 'rgba(102,187,106,1)'; }
-  else if (Fmed < 45) { verdict = 'a firm push that may be difficult for users with reduced dexterity'; vCol = 'rgba(232,150,42,1)'; }
-  else { verdict = 'high - consider an autoinjector, larger needle, or a lower-viscosity formulation'; vCol = 'rgba(217,79,79,1)'; }
+  if      (Fmed < 10) { verdict = 'low — comfortable for most adults to inject manually';         vCol = 'rgba(23,169,212,1)'; }
+  else if (Fmed < 20) { verdict = 'moderate — generally manageable for healthy adults';            vCol = 'rgba(102,187,106,1)'; }
+  else if (Fmed < 30) { verdict = 'high — may be difficult for users with reduced dexterity';     vCol = 'rgba(232,150,42,1)'; }
+  else                { verdict = 'very high — consider an autoinjector, larger needle, or a lower-viscosity formulation'; vCol = 'rgba(217,79,79,1)'; }
 
   return `
     <div class="gauge-card">
@@ -503,15 +556,13 @@ function buildGauge(Fmed, Flow, Fhigh, isNewt) {
       </div>
       <div class="gauge-scale"><span>0 N</span><span>${(scaleMax/2)} N</span><span>${scaleMax} N</span></div>
       <div class="gauge-labels">
-        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(23,169,212,0.55)"></span>Easy &lt;15 N</span>
-        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(102,187,106,0.55)"></span>Moderate 15-30</span>
-        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(232,150,42,0.6)"></span>Firm 30-45</span>
-        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(217,79,79,0.62)"></span>Very high &gt;45</span>
+        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(23,169,212,0.55)"></span>Low &lt;10 N</span>
+        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(102,187,106,0.55)"></span>Moderate 10–20 N</span>
+        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(232,150,42,0.6)"></span>High 20–30 N</span>
+        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(217,79,79,0.62)"></span>Very high &gt;30 N</span>
       </div>
       <div class="gauge-verdict">
-        At <b>${fmt(Fmed, 1)} N</b>, this is <b style="color:${vCol}">${verdict}</b>.
-        Comfort thresholds are heuristic screening guides; a WuXi human-factors study found healthy adults
-        comfortable injecting ≈20 cP (1 mL in a 1 mL PFS) within 15 s.
+        At <b>${fmt(Fmed, 1)} N</b>, the predicted injection force is <b style="color:${vCol}">${verdict}</b>.
       </div>
     </div>`;
 }
@@ -606,11 +657,14 @@ function submitContact(e) {
 
 /* init */
 window.addEventListener('DOMContentLoaded', () => {
-  setViscRows(DEFAULT_VISC_ROWS);
+  addViscRow();
+  addViscRow();
   setViscMode('custom');
   setInjMode('time');
-  ['barrelR', 'needleCustom', 'injVol', 'injTime', 'flowQ', 'plungerV'].forEach(id => {
+  ['barrelR', 'injVol', 'injTime', 'flowQ', 'plungerV'].forEach(id => {
     const el = $(id); if (el) el.addEventListener('input', computeDerived);
   });
+  const ncInp = $('needleCustom');
+  if (ncInp) ncInp.addEventListener('input', () => { validateNeedleCustom(); computeDerived(); });
   computeDerived();
 });

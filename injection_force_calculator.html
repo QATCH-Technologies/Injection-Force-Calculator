@@ -11,7 +11,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-<div class="page-wrap">
+<div class="page-wrap layout-tricol">
 
   <!-- ══ NAVBAR ════════════════════════════════════════════════════ -->
   <nav class="navbar">
@@ -146,7 +146,7 @@
   <!-- ══ APP BODY ══════════════════════════════════════════════════ -->
   <div class="app-body">
 
-    <!-- LEFT: two stacked input tiles -->
+    <!-- LEFT: two skinny input panels, side by side (tri-column layout) -->
     <div id="inputColumn">
 
       <!-- ── TILE 1 : VISCOSITY ─────────────────────────────────── -->
@@ -238,8 +238,13 @@
             </select>
           </div>
           <div class="field" id="needleCustomWrap" style="display:none">
-            <label for="needleCustom">Custom gauge or inner Ø <span class="unit">G or mm</span></label>
-            <input type="number" id="needleCustom" placeholder="e.g. 25 (gauge) or 0.20 (mm)" min="0" step="any" inputmode="decimal">
+            <label>Custom needle diameter</label>
+            <div class="mode-toggle needle-type-toggle" role="group" aria-label="Custom needle input type">
+              <button class="mode-btn active" id="ncmGauge" onclick="setNeedleCustomMode('gauge')" type="button">Gauge</button>
+              <button class="mode-btn"        id="ncmId"    onclick="setNeedleCustomMode('id')"    type="button">ID mm</button>
+            </div>
+            <input type="number" id="needleCustom" placeholder="e.g. 25" min="18" max="34" step="1" inputmode="decimal">
+            <span class="field-hint" id="needleCustomHint">Valid range: 18–34 G</span>
           </div>
           <div class="field">
             <label for="needleL">Needle Length <span class="unit">mm</span></label>
