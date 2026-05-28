@@ -84,9 +84,14 @@ function linearSlope(x, y) {
 
 function newtonianResult(gamma, eta, a, reason) {
   const etaMean = mean(eta);
+  const etaStd  = std(eta);
   const gLow = Math.max(1, Math.min(...gamma) / 3);
   const gammaGrid = logspace(Math.log10(gLow), Math.log10(20e6), 300);
-  const etaGrid = gammaGrid.map(() => etaMean);
+  // Median is the mean; ±2σ band captures measurement scatter.
+  // Clamped to 1% of etaMean so the lower band never goes negative on log scale.
+  const medBand  = gammaGrid.map(() => etaMean);
+  const lowBand  = gammaGrid.map(() => Math.max(etaMean - 2 * etaStd, etaMean * 0.01));
+  const highBand = gammaGrid.map(() => etaMean + 2 * etaStd);
   const rmseLog = Math.sqrt(mean(eta.map(v => (log10(etaMean) - log10(v)) ** 2)));
 
   const fit = {
@@ -104,9 +109,9 @@ function newtonianResult(gamma, eta, a, reason) {
     accepted_fits: [fit],
     n_accepted_fits: 1,
     gamma_grid: gammaGrid,
-    lower_band: etaGrid,
-    median_band: etaGrid,
-    upper_band: etaGrid,
+    lower_band:  lowBand,
+    median_band: medBand,
+    upper_band:  highBand,
     measured_shear_rates: gamma,
     measured_viscosities: eta,
     diagnostics: {

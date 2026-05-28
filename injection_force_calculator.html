@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="injection_force_styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="icon" type="image/png" href="icons/qatch-logo.png">
 </head>
 <body>
 <div class="page-wrap layout-tricol">
@@ -150,7 +151,7 @@
     <div id="inputColumn">
 
       <!-- ── TILE 1 : VISCOSITY ─────────────────────────────────── -->
-      <div class="glass-card input-tile">
+      <div class="glass-card input-tile" id="viscTile">
         <div class="card-header">
           <span class="icon-slot head-slot" title="Custom icon: icons/viscosity.svg">
             <img class="custom-icon" src="icons/viscosity.svg" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">
@@ -192,6 +193,10 @@
               <button class="vg-add" onclick="addViscRow()" type="button">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Add measurement
+              </button>
+              <button class="vg-clear" onclick="clearViscRows()" type="button">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                Clear all
               </button>
             </div>
             <p class="data-hint">One measurement per row; empty rows are ignored. With only 2-3 points the data is duplicated to produce a rough, low-confidence fit.</p>
@@ -244,7 +249,7 @@
               <button class="mode-btn"        id="ncmId"    onclick="setNeedleCustomMode('id')"    type="button">ID mm</button>
             </div>
             <input type="number" id="needleCustom" placeholder="e.g. 25" min="18" max="34" step="1" inputmode="decimal">
-            <span class="field-hint" id="needleCustomHint">Valid range: 18–34 G</span>
+            <span class="field-hint" id="needleCustomHint">Valid range: 18-34 G</span>
           </div>
           <div class="field">
             <label for="needleL">Needle Length <span class="unit">mm</span></label>

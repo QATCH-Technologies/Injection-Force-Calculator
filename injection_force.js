@@ -159,13 +159,13 @@ function setNeedleCustomMode(m) {
       inp.min  = '18';
       inp.max  = '34';
       inp.step = '1';
-      if (hint) hint.textContent = 'Valid range: 18–34 G';
+      if (hint) hint.textContent = 'Valid range: 18-34 G';
     } else {
       inp.placeholder = 'e.g. 0.210';
       inp.min  = '0.01';
       inp.max  = '4.99';
       inp.step = 'any';
-      if (hint) hint.textContent = 'Inner diameter in mm (0.01 – 4.99)';
+      if (hint) hint.textContent = 'Inner diameter in mm (0.01 - 4.99)';
     }
     inp.value = '';
     inp.classList.remove('field-invalid');
@@ -380,7 +380,7 @@ function renderRheology(r) {
       <div class="chart-legend">
         <div class="legend-item" style="display:flex;align-items:center;gap:6px"><span class="legend-swatch" style="background:rgba(23,169,212,0.22)"></span>90% ensemble band (5-95%)</div>
         <div class="legend-item" style="display:flex;align-items:center;gap:6px"><span class="legend-line" style="border-color:#0d8ab3"></span>Median fit</div>
-        ${isNewt ? '' : '<div class="legend-item" style="display:flex;align-items:center;gap:6px"><span class="legend-dot2" style="background:#1a2a3a"></span>Measured data</div>'}
+        ${r.measured_shear_rates.length ? '<div class="legend-item" style="display:flex;align-items:center;gap:6px"><span class="legend-dot2" style="background:#1a2a3a"></span>Measured data</div>' : ''}
         <div class="legend-item" id="needleLegend" style="display:none;align-items:center;gap:6px"><span class="legend-line" style="border-color:#e8962a;border-top-style:dashed"></span>NEEDLE SHEAR γ<sub>eff</sub></div>
       </div>
     </div>
@@ -434,7 +434,8 @@ function calcForce() {
 function renderForce(o) {
   // Relative width of the plunger-force confidence band. If it exceeds the
   // limit, the estimate is too uncertain to act on and we steer to nanovisQ.
-  const forceRange = (o.isNewt || !(o.Fmed > 0)) ? 0 : (o.Fhigh - o.Flow) / o.Fmed;
+  const hasBand = Math.abs(o.Fhigh - o.Flow) > 0.01;
+  const forceRange = (hasBand && o.Fmed > 0) ? (o.Fhigh - o.Flow) / o.Fmed : 0;
   const cyFitWeak = !o.isNewt && lastFit?.diagnostics?.confidence === 'Weak';
   const tooUncertain = (forceRange > FORCE_UNCERTAINTY_LIMIT) || cyFitWeak;
   const uncertainHtml = tooUncertain ? `
@@ -447,10 +448,10 @@ function renderForce(o) {
       </div>
     </div>` : '';
 
-  const ciVisc = o.isNewt ? '' :
-    `<div class="metric-ci">90% CI <b>${fmt(o.v.lower, 2)}</b> - <b>${fmt(o.v.upper, 2)}</b> cP</div>`;
-  const ciForce = o.isNewt ? '' :
-    `<div class="metric-ci">90% CI <b>${fmt(o.Flow, 1)}</b> - <b>${fmt(o.Fhigh, 1)}</b> N</div>`;
+  const ciVisc = hasBand ?
+    `<div class="metric-ci">90% CI <b>${fmt(o.v.lower, 2)}</b> - <b>${fmt(o.v.upper, 2)}</b> cP</div>` : '';
+  const ciForce = hasBand ?
+    `<div class="metric-ci">90% CI <b>${fmt(o.Flow, 1)}</b> - <b>${fmt(o.Fhigh, 1)}</b> N</div>` : '';
 
   const extrapNote = o.extrap
     ? `<div class="warn-item" style="margin-bottom:14px">
@@ -491,7 +492,7 @@ function renderForce(o) {
     </div>
 
     ${uncertainHtml}
-    ${buildGauge(o.Fmed, o.Flow, o.Fhigh, o.isNewt)}
+    ${buildGauge(o.Fmed, o.Flow, o.Fhigh, hasBand)}
 
     <div class="breakdown">
       <div class="bd-row">
@@ -514,7 +515,7 @@ function renderForce(o) {
 }
 
 /* force "scale": zoned gauge with CI span + pointer + verdict */
-function buildGauge(Fmed, Flow, Fhigh, isNewt) {
+function buildGauge(Fmed, Flow, Fhigh, hasBand) {
   const zones = [
     { to: 10,       cls: 'z-easy', label: 'Low',       col: 'rgba(23,169,212,0.55)' },
     { to: 20,       cls: 'z-mod',  label: 'Moderate',  col: 'rgba(102,187,106,0.55)' },
@@ -534,8 +535,8 @@ function buildGauge(Fmed, Flow, Fhigh, isNewt) {
   }
 
   const ciLeft = pct(Flow), ciW = Math.max(0.5, pct(Fhigh) - pct(Flow));
-  const ciSpan = isNewt ? '' :
-    `<div class="gauge-ci" style="left:${ciLeft}%;width:${ciW}%"></div>`;
+  const ciSpan = hasBand ?
+    `<div class="gauge-ci" style="left:${ciLeft}%;width:${ciW}%"></div>` : '';
 
   let verdict, vCol;
   if      (Fmed < 10) { verdict = 'low — comfortable for most adults to inject manually';         vCol = 'rgba(23,169,212,1)'; }
@@ -547,7 +548,7 @@ function buildGauge(Fmed, Flow, Fhigh, isNewt) {
     <div class="gauge-card">
       <div class="gauge-readout">
         <span class="g-value">${fmt(Fmed, 1)}</span><span class="g-unit">N</span>
-        ${isNewt ? '' : `<span class="g-range">${fmt(Flow, 1)} - ${fmt(Fhigh, 1)} N<span>90% confidence</span></span>`}
+        ${hasBand ? `<span class="g-range">${fmt(Flow, 1)} – ${fmt(Fhigh, 1)} N<span>90% confidence</span></span>` : ''}
       </div>
       <div class="gauge-track">
         ${zoneHtml}
@@ -557,8 +558,8 @@ function buildGauge(Fmed, Flow, Fhigh, isNewt) {
       <div class="gauge-scale"><span>0 N</span><span>${(scaleMax/2)} N</span><span>${scaleMax} N</span></div>
       <div class="gauge-labels">
         <span class="gauge-tag"><span class="gt-dot" style="background:rgba(23,169,212,0.55)"></span>Low &lt;10 N</span>
-        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(102,187,106,0.55)"></span>Moderate 10–20 N</span>
-        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(232,150,42,0.6)"></span>High 20–30 N</span>
+        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(102,187,106,0.55)"></span>Moderate 10-20 N</span>
+        <span class="gauge-tag"><span class="gt-dot" style="background:rgba(232,150,42,0.6)"></span>High 20-30 N</span>
         <span class="gauge-tag"><span class="gt-dot" style="background:rgba(217,79,79,0.62)"></span>Very high &gt;30 N</span>
       </div>
       <div class="gauge-verdict">
@@ -668,3 +669,12 @@ window.addEventListener('DOMContentLoaded', () => {
   if (ncInp) ncInp.addEventListener('input', () => { validateNeedleCustom(); computeDerived(); });
   computeDerived();
 });
+
+function clearViscRows() {
+  const host = $('viscRows');
+  if (!host) return;
+  host.innerHTML = '';
+  addViscRow();
+  addViscRow();
+  lastFit = null;
+}

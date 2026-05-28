@@ -423,7 +423,7 @@ body::after {
 .field input:focus,
 .field select:focus {
   border-color: var(--qatch-cyan);
-  background: rgba(255,255,255,0.92);
+  background-color: rgba(255,255,255,0.92);
   box-shadow: 0 0 0 3px rgba(23,169,212,0.12);
 }
 
@@ -1909,3 +1909,61 @@ blockquote a {
   background: rgba(217, 79, 79, 0.04) !important;
   box-shadow: 0 0 0 3px rgba(217, 79, 79, 0.10) !important;
 }
+
+
+/* ════════════════════════════════════════════════════════════════
+   VISCOSITY TILE — fill-then-scroll flex chain
+   card-body → #customInputs → .visc-grid → .vg-rows
+   The rows box grows to fill the panel; scrolls only when full.
+   Scoped to #viscTile so the syringe tile is unaffected.
+   ════════════════════════════════════════════════════════════════ */
+
+/* Step 1: viscosity card-body becomes a non-scrolling flex column */
+.layout-tricol #viscTile > .card-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;       /* overrides overflow-y: auto from the base tricol rule */
+}
+
+/* Step 2: custom-inputs section fills remaining space */
+.layout-tricol #viscTile #customInputs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Step 3: visc-grid fills space inside custom-inputs */
+.layout-tricol #viscTile .visc-grid {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+}
+
+/* Step 4: vg-rows is the scroll container — fills all remaining height */
+.layout-tricol #viscTile .vg-rows {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.vg-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px dashed rgba(217,79,79,0.45);
+  border-radius: var(--radius-sm);
+  background: rgba(217,79,79,0.05);
+  color: var(--danger);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-style var(--transition);
+}
+.vg-clear:hover { background: var(--danger); color: #fff; border-style: solid; }
